@@ -10,22 +10,49 @@ import { ChevronUp, ChevronDown, Minimize2, Maximize2 } from 'lucide-react';
 
 const defaultModels: AIModel[] = [
   { 
+    id: 'mistral', 
+    modelId: 'mistral:latest',
+    name: 'Mistral', 
+    description: 'Fast and efficient (7.2B)', 
+    status: 'ready', 
+    supportsImages: false, 
+    icon: 'cpu' 
+  },
+  { 
     id: 'llama3.2', 
     modelId: 'llama3.2:latest',
     name: 'LLaMA 3.2', 
-    description: 'Open source powerhouse', 
+    description: 'Compact powerhouse (3.2B)', 
     status: 'ready', 
     supportsImages: false, 
     icon: 'brain' 
   },
   { 
-    id: 'mistral', 
-    modelId: 'mistral:latest',
-    name: 'Mistral Large', 
-    description: 'Fast and efficient', 
+    id: 'phi3', 
+    modelId: 'phi3:latest',
+    name: 'Phi-3', 
+    description: 'Microsoft\'s efficient model (3.8B)', 
     status: 'ready', 
     supportsImages: false, 
-    icon: 'cpu' 
+    icon: 'zap' 
+  },
+  { 
+    id: 'codellama', 
+    modelId: 'codellama:latest',
+    name: 'Code Llama', 
+    description: 'Specialized for coding (7B)', 
+    status: 'ready', 
+    supportsImages: false, 
+    icon: 'code' 
+  },
+  { 
+    id: 'llava', 
+    modelId: 'llava:latest',
+    name: 'LLaVA Vision', 
+    description: 'Image understanding (7B)', 
+    status: 'ready', 
+    supportsImages: true, 
+    icon: 'image' 
   },
 ];
 

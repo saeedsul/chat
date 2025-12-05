@@ -1,42 +1,71 @@
 services:
+  # Your React app
   web:
     build: .
     ports:
       - "3000:80"
     restart: unless-stopped
     depends_on:
-      - mistral
-      - llama
+      ollama:
+        condition: service_healthy
     networks:
       - ai-network
 
-  mistral:
-    build:
-      context: .
-      dockerfile: ollama-mistral.dockerfile
-    ports:
-      - "12434:11434"
-    volumes:
-      - mistral-data:/root/.ollama
-    restart: unless-stopped
-    networks:
-      - ai-network
-
-  llama:
-    build:
-      context: .
-      dockerfile: ollama-llama.dockerfile
+  # Single Ollama instance serving all models
+  ollama:
+    image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
-      - llama-data:/root/.ollama
+      - ollama-data:/root/.ollama
     restart: unless-stopped
     networks:
       - ai-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 5
+        
+        # Pull chat models
+        if ! ollama list | grep -q "mistral"; then
+          echo "Pulling mistral model..."
+          ollama pull mistral
+        fi
+        
+        if ! ollama list | grep -q "llama3.2"; then
+          echo "Pulling llama3.2 model..."
+          ollama pull llama3.2
+        fi
+        
+        if ! ollama list | grep -q "phi3"; then
+          echo "Pulling phi3 model..."
+          ollama pull phi3
+        fi
+        
+        # Pull code model
+        if ! ollama list | grep -q "codellama"; then
+          echo "Pulling codellama model..."
+          ollama pull codellama
+        fi
+        
+        # Pull vision model (optional - remove if you don't need image support)
+        if ! ollama list | grep -q "llava"; then
+          echo "Pulling llava model..."
+          ollama pull llava
+        fi
+        
+        echo "All models ready!"
+        wait
 
 volumes:
-  mistral-data:
-  llama-data:
+  ollama-data:
 
 networks:
   ai-network:

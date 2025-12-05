@@ -35,7 +35,10 @@ export async function streamChatCompletion(
       headers['Authorization'] = `Bearer ${AI_CONFIG.apiKey}`;
     }
 
-    const response = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
+    // Get dynamic base URL based on model
+    const baseUrl = AI_CONFIG.getBaseUrl(modelId);
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({

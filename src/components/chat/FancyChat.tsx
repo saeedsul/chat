@@ -4,15 +4,29 @@ import { ChatHeader } from './ChatHeader';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { WelcomeScreen } from './WelcomeScreen';
-import { streamChatCompletion } from '@/services/chatService';
-import { AI_CONFIG } from '@/config/ai';
+import { streamChatCompletion } from '@/services/chatService'; 
 import { toast } from 'sonner';
 import { ChevronUp, ChevronDown, Minimize2, Maximize2 } from 'lucide-react';
 
 const defaultModels: AIModel[] = [
-  { id: 'gpt-oss', modelId: 'ai/gpt-oss', name: 'GPT-OSS', description: 'Local Docker model', status: 'ready', supportsImages: true, icon: 'sparkles' },
-  { id: 'llama-2', modelId: 'ai/llama-2', name: 'LLaMA 2 70B', description: 'Open source powerhouse', status: 'ready', supportsImages: false, icon: 'brain' },
-  { id: 'mistral', modelId: 'ai/mistral', name: 'Mistral Large', description: 'Fast and efficient', status: 'ready', supportsImages: false, icon: 'cpu' },
+  { 
+    id: 'llama3.2', 
+    modelId: 'llama3.2:latest',
+    name: 'LLaMA 3.2', 
+    description: 'Open source powerhouse', 
+    status: 'ready', 
+    supportsImages: false, 
+    icon: 'brain' 
+  },
+  { 
+    id: 'mistral', 
+    modelId: 'mistral:latest',
+    name: 'Mistral Large', 
+    description: 'Fast and efficient', 
+    status: 'ready', 
+    supportsImages: false, 
+    icon: 'cpu' 
+  },
 ];
 
 interface CollapsibleSection {

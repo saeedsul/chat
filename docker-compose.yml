@@ -1,0 +1,43 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - mistral
+      - llama
+    networks:
+      - ai-network
+
+  mistral:
+    build:
+      context: .
+      dockerfile: ollama-mistral.dockerfile
+    ports:
+      - "12434:11434"
+    volumes:
+      - mistral-data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - ai-network
+
+  llama:
+    build:
+      context: .
+      dockerfile: ollama-llama.dockerfile
+    ports:
+      - "11434:11434"
+    volumes:
+      - llama-data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - ai-network
+
+volumes:
+  mistral-data:
+  llama-data:
+
+networks:
+  ai-network:
+    driver: bridge

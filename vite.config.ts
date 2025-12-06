@@ -3,16 +3,14 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
     proxy: {
-      '/api/ai': {
-        target: 'http://localhost:12434',
+      '/api': {
+        target: 'http://localhost:11434',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/ai/, '/engines/v1'),
       },
     },
   },
@@ -21,5 +19,11 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  // Define environment variables
+  define: {
+    'import.meta.env.VITE_API_BASE_URL': JSON.stringify(
+      mode === 'production' ? '/api' : '/api'
+    ),
   },
 }));

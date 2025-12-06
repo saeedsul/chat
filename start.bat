@@ -11,4 +11,4 @@ echo Open your browser to: http://localhost:3000
 echo.
 echo Press any key to view logs...
 pause
-docker-compose logs -f
+docker-compose logs -f ollama

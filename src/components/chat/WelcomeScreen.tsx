@@ -1,19 +1,41 @@
 import { Sparkles } from 'lucide-react';
 
 export function WelcomeScreen() {
+ 
+
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 animate-fade-in">
-      <div className="relative mb-4">
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary to-accent flex items-center justify-center animate-pulse-glow">
-          <Sparkles className="w-10 h-10 text-primary-foreground" />
+    <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-gray-950">
+      <div className="max-w-4xl w-full space-y-12">
+        {/* Header */}
+        <div className="text-center space-y-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-blue-600 shadow-lg">
+            <Sparkles className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100">
+            How can I help you today?
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400">
+            I'm powered by Llama 3.2 and ready to assist with your tasks
+          </p>
+        </div> 
+
+        {/* Footer info */}
+        <div className="text-center space-y-2">
+          <p className="text-sm text-gray-500 dark:text-gray-500">
+            Start a conversation by typing a message below
+          </p>
+          <div className="flex items-center justify-center gap-4 text-xs text-gray-400 dark:text-gray-600">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              All models ready
+            </span>
+            <span>•</span>
+            <span>Vision enabled</span>
+            <span>•</span>
+            <span>Code execution available</span>
+          </div>
         </div>
-        <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-accent/20 blur-2xl -z-10" />
       </div>
-      
-      <h1 className="text-3xl font-bold">
-        <span className="gradient-text">Local Chat</span>
-        <span className="gradient-text"> AI</span>
-      </h1>
     </div>
   );
 }

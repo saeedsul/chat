@@ -1,23 +1,31 @@
-// AI Configuration
+const isDevelopment = import.meta.env.DEV;
+const isProduction = import.meta.env.PROD;
+
 export const AI_CONFIG = {
-  // Dynamic base URL based on model
-  getBaseUrl: (modelId: string): string => {
-    if (modelId.includes('llama')) {
-      return '/api/llama';
-    } else if (modelId.includes('mistral')) {
-      return '/api/mistral';
-    } else if (modelId.includes('phi3')) {
-      return '/api/phi3';
-    } else if (modelId.includes('codellama')) {
-      return '/api/codellama';
-    } else if (modelId.includes('llava')) {
-      return '/api/llava';
-    }
-    // Default to mistral
-    return '/api/mistral';
+  apiKey: '', // Ollama doesn't need API key
+  
+  getBaseUrl: (modelId: string) => {
+    // In development: use Vite proxy
+    // In production: use Nginx proxy
+    // Both use relative paths, proxies handle routing
+    return '/api';
   },
-   
-  apiKey: '',
-   
-  defaultModel: 'mistral:latest',
+  
+  models: {
+    'llama3.2:latest': {
+      id: 'llama3.2:latest',
+      name: 'Llama 3.2',
+      provider: 'ollama',
+    },
+    'llava-phi3': {
+      id: 'llava-phi3',
+      name: 'Llava Phi3',
+      provider: 'ollama',
+    },
+    'deepseek-coder:1.3b': {
+      id: 'deepseek-coder:1.3b',
+      name: 'DeepSeek Coder',
+      provider: 'ollama',
+    },
+  },
 };

@@ -26,42 +26,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 45s
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         ollama serve &
         sleep 5
         
-        # Pull chat models
-        if ! ollama list | grep -q "mistral"; then
-          echo "Pulling mistral model..."
-          ollama pull mistral
+        # Pull llama3.2:latest model
+        if ! ollama list | grep -q "llama3.2:latest"; then
+          echo "Pulling llama3.2:latest model (text only)..."
+          ollama pull llama3.2:latest
         fi
         
-        if ! ollama list | grep -q "llama3.2"; then
-          echo "Pulling llama3.2 model..."
-          ollama pull llama3.2
+        if ! ollama list | grep -q "llava-phi3"; then
+          echo "Pulling llava-phi3 model (fast vision)..."
+          ollama pull llava-phi3
         fi
         
-        if ! ollama list | grep -q "phi3"; then
-          echo "Pulling phi3 model..."
-          ollama pull phi3
+        # Pull coding model
+        if ! ollama list | grep -q "deepseek-coder:1.3b"; then
+          echo "Pulling deepseek-coder:1.3b model (lightweight coding)..."
+          ollama pull deepseek-coder:1.3b
         fi
         
-        # Pull code model
-        if ! ollama list | grep -q "codellama"; then
-          echo "Pulling codellama model..."
-          ollama pull codellama
-        fi
-        
-        # Pull vision model (optional - remove if you don't need image support)
-        if ! ollama list | grep -q "llava"; then
-          echo "Pulling llava model..."
-          ollama pull llava
-        fi
-        
-        echo "All models ready!"
+        echo "=== All models ready! ==="
+        ollama list
         wait
 
 volumes:

@@ -1,142 +1,226 @@
 import { Message } from '@/types/chat';
-import { cn } from '@/lib/utils';
-import { User, Bot, Copy, Check, Image as ImageIcon, FileText, Loader2 } from 'lucide-react';
+import { User, Sparkles, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface ChatMessageProps {
   message: Message;
+  isDarkMode?: boolean;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
-  const [copied, setCopied] = useState(false);
+export function ChatMessage({ message, isDarkMode = false }: ChatMessageProps) {
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const isUser = message.role === 'user';
 
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyCode = async (code: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(id);
+      toast.success('Code copied to clipboard');
+      setTimeout(() => setCopiedCode(null), 2000);
+    } catch (err) {
+      toast.error('Failed to copy code');
+    }
   };
 
   return (
-    <div className={cn('flex gap-4 animate-slide-up', isUser ? 'flex-row-reverse' : 'flex-row')}>
-      <div className={cn(
-        'flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center',
-        isUser ? 'bg-primary text-primary-foreground' : 'bg-secondary/80 border border-primary/30'
-      )}>
-        {isUser ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5 text-primary" />}
-      </div>
-
-      <div className={cn('flex-1 max-w-[80%]', isUser && 'flex flex-col items-end')}>
-        {message.files && message.files.length > 0 && (
-          <div className={cn('flex flex-wrap gap-2 mb-2', isUser && 'justify-end')}>
-            {message.files.map((file) => (
-              <div key={file.id} className="glass rounded-lg p-2 flex items-center gap-2">
-                {file.type.startsWith('image/') ? (
-                  file.preview ? (
-                    <img src={file.preview} alt={file.name} className="w-16 h-16 object-cover rounded" />
-                  ) : (
-                    <ImageIcon className="w-6 h-6 text-primary" />
-                  )
-                ) : (
-                  <FileText className="w-6 h-6 text-primary" />
-                )}
-                <span className="text-sm text-muted-foreground truncate max-w-[150px]">{file.name}</span>
-              </div>
-            ))}
+    <div className={`flex gap-4 ${isUser ? 'justify-start' : 'justify-end'} w-full`}>
+      {/* User messages - Left side */}
+      {isUser && (
+        <>
+          {/* User Avatar */}
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center">
+            <User className="w-5 h-5 text-white" />
           </div>
-        )}
 
-        <div className={cn(
-          'rounded-2xl px-4 py-3 relative group',
-          isUser 
-            ? 'bg-primary text-primary-foreground rounded-tr-sm' 
-            : 'bg-zinc-900 text-zinc-100 rounded-tl-sm border border-zinc-800'
-        )}>
-          {message.isStreaming && !message.content ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Thinking...</span>
+          {/* User Message Content */}
+          <div className="flex-1 max-w-3xl">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-200 dark:border-gray-800">
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <p className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">
+                  {message.content}
+                </p>
+              </div>
+
+              {/* File attachments */}
+              {message.files && message.files.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {message.files.map(file => (
+                    <div key={file.id} className="flex items-center gap-2">
+                      {file.type.startsWith('image/') ? (
+                        <img
+                          src={file.url}
+                          alt={file.name}
+                          className="max-w-sm rounded-lg border border-gray-200 dark:border-gray-700"
+                        />
+                      ) : (
+                        <div className="px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : isUser ? (
-            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-              {message.content}
-            </div>
-          ) : (
-            <div className={cn(
-              'prose prose-invert prose-sm max-w-none',
-              '[&_pre]:bg-zinc-950 [&_pre]:border [&_pre]:border-zinc-700 [&_pre]:rounded-lg [&_pre]:my-2',
-              '[&_code]:text-cyan-400 [&_code]:bg-transparent',
-              '[&_p]:my-2 [&_p]:leading-relaxed',
-              '[&_ul]:my-2 [&_ol]:my-2',
-              '[&_li]:my-0.5',
-              '[&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2',
-              '[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-2',
-              '[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1',
-              '[&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:italic',
-              '[&_a]:text-primary [&_a]:underline',
-              '[&_table]:border-collapse [&_th]:border [&_th]:border-zinc-700 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-zinc-700 [&_td]:px-2 [&_td]:py-1',
-              message.isStreaming && 'after:content-["▊"] after:animate-pulse after:text-primary after:ml-0.5'
-            )}>
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code({ node, className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || '');
-                    const isInline = !match && !className;
-                    
-                    if (isInline) {
-                      return (
-                        <code className="bg-zinc-800 px-1.5 py-0.5 rounded text-cyan-400 text-xs" {...props}>
+          </div>
+        </>
+      )}
+
+      {/* AI messages - Right side */}
+      {!isUser && (
+        <>
+          {/* AI Message Content */}
+          <div className="flex-1 max-w-3xl">
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      const codeString = String(children).replace(/\n$/, '');
+                      const codeId = `code-${Math.random().toString(36).substr(2, 9)}`;
+
+                      return !inline && match ? (
+                        <div className="relative group my-4">
+                          {/* Language label and copy button */}
+                          <div className="flex items-center justify-between px-4 py-2 bg-gray-900 dark:bg-gray-950 text-gray-100 rounded-t-lg border-b border-gray-700">
+                            <span className="text-xs font-mono uppercase tracking-wide">
+                              {match[1]}
+                            </span>
+                            <button
+                              onClick={() => copyCode(codeString, codeId)}
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+                            >
+                              {copiedCode === codeId ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  Copy
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Code block with syntax highlighting */}
+                          <SyntaxHighlighter
+                            style={isDarkMode ? oneDark : oneLight}
+                            language={match[1]}
+                            PreTag="div"
+                            customStyle={{
+                              margin: 0,
+                              borderTopLeftRadius: 0,
+                              borderTopRightRadius: 0,
+                              borderBottomLeftRadius: '0.5rem',
+                              borderBottomRightRadius: '0.5rem',
+                              fontSize: '0.875rem',
+                              lineHeight: '1.5',
+                            }}
+                            {...props}
+                          >
+                            {codeString}
+                          </SyntaxHighlighter>
+                        </div>
+                      ) : (
+                        <code
+                          className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-sm font-mono text-red-600 dark:text-red-400"
+                          {...props}
+                        >
                           {children}
                         </code>
                       );
-                    }
-                    
-                    return (
-                      <SyntaxHighlighter
-                        style={oneDark as { [key: string]: React.CSSProperties }}
-                        language={match?.[1] || 'text'}
-                        PreTag="div"
-                        customStyle={{
-                          margin: 0,
-                          padding: '1rem',
-                          fontSize: '0.8rem',
-                          borderRadius: '0.5rem',
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    );
-                  },
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-            </div>
-          )}
-          
-          {!isUser && !message.isStreaming && message.content && (
-            <button
-              onClick={handleCopy}
-              className="absolute -right-10 top-2 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg hover:bg-secondary"
-            >
-              {copied ? (
-                <Check className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <Copy className="w-4 h-4 text-muted-foreground" />
-              )}
-            </button>
-          )}
-        </div>
+                    },
+                    p({ children }) {
+                      return (
+                        <p className="text-gray-900 dark:text-gray-100 leading-7 mb-4 last:mb-0">
+                          {children}
+                        </p>
+                      );
+                    },
+                    ul({ children }) {
+                      return (
+                        <ul className="list-disc list-inside space-y-2 text-gray-900 dark:text-gray-100 mb-4">
+                          {children}
+                        </ul>
+                      );
+                    },
+                    ol({ children }) {
+                      return (
+                        <ol className="list-decimal list-inside space-y-2 text-gray-900 dark:text-gray-100 mb-4">
+                          {children}
+                        </ol>
+                      );
+                    },
+                    h1({ children }) {
+                      return (
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4 mt-6">
+                          {children}
+                        </h1>
+                      );
+                    },
+                    h2({ children }) {
+                      return (
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3 mt-5">
+                          {children}
+                        </h2>
+                      );
+                    },
+                    h3({ children }) {
+                      return (
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 mt-4">
+                          {children}
+                        </h3>
+                      );
+                    },
+                    blockquote({ children }) {
+                      return (
+                        <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-50 dark:bg-blue-900/20 text-gray-800 dark:text-gray-200 italic">
+                          {children}
+                        </blockquote>
+                      );
+                    },
+                    a({ href, children }) {
+                      return (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {children}
+                        </a>
+                      );
+                    },
+                  }}
+                >
+                  {message.content || ''}
+                </ReactMarkdown>
+              </div>
 
-        <div className={cn('text-xs text-muted-foreground mt-1', isUser && 'text-right')}>
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      </div>
+              {message.isStreaming && (
+                <span className="inline-block w-2 h-4 bg-blue-600 dark:bg-blue-400 animate-pulse ml-1" />
+              )}
+            </div>
+          </div>
+
+          {/* AI Avatar */}
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-white" />
+          </div>
+        </>
+      )}
     </div>
   );
 }

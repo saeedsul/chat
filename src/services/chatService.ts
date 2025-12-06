@@ -1,10 +1,5 @@
 import { AI_CONFIG } from '@/config/ai';
-import { Message } from '@/types/chat';
-
-interface ChatCompletionMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
+import { Message } from '@/types/chat'; 
 
 interface StreamCallbacks {
   onToken: (token: string) => void;
@@ -20,25 +15,39 @@ export async function streamChatCompletion(
 ): Promise<void> {
   const { onToken, onComplete, onError } = callbacks;
 
-  const chatMessages: ChatCompletionMessage[] = messages.map(msg => ({
-    role: msg.role,
-    content: msg.content,
-  }));
+  // Convert messages to Ollama format with image support
+  const chatMessages = messages.map(msg => {
+    const messageContent: any = {
+      role: msg.role,
+      content: msg.content,
+    };
+
+    // Add images if present (for vision models)
+    if (msg.files && msg.files.length > 0) {
+      const images = msg.files
+        .filter(f => f.type.startsWith('image/'))
+        .map(f => f.content); // Use the data URL directly
+      
+      if (images.length > 0) {
+        messageContent.images = images;
+      }
+    }
+
+    return messageContent;
+  });
 
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    // Only add Authorization header if API key is provided
     if (AI_CONFIG.apiKey) {
       headers['Authorization'] = `Bearer ${AI_CONFIG.apiKey}`;
     }
 
-    // Get dynamic base URL based on model
     const baseUrl = AI_CONFIG.getBaseUrl(modelId);
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl}/chat`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -68,46 +77,42 @@ export async function streamChatCompletion(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Process SSE lines
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
         const trimmedLine = line.trim();
-        if (!trimmedLine || trimmedLine.startsWith(':')) continue;
-        if (!trimmedLine.startsWith('data: ')) continue;
-
-        const data = trimmedLine.slice(6);
-        if (data === '[DONE]') {
-          onComplete();
-          return;
-        }
+        if (!trimmedLine) continue;
 
         try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            onToken(content);
+          const parsed = JSON.parse(trimmedLine);
+          
+          if (parsed.message?.content) {
+            onToken(parsed.message.content);
           }
-        } catch {
-          // Incomplete JSON, will be handled in next iteration
+          
+          if (parsed.done === true) {
+            onComplete();
+            return;
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse JSON line:', trimmedLine, parseError);
         }
       }
     }
 
-    // Process any remaining buffer
     if (buffer.trim()) {
-      const trimmedLine = buffer.trim();
-      if (trimmedLine.startsWith('data: ') && trimmedLine.slice(6) !== '[DONE]') {
-        try {
-          const parsed = JSON.parse(trimmedLine.slice(6));
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            onToken(content);
-          }
-        } catch {
-          // Ignore parse errors for final buffer
+      try {
+        const parsed = JSON.parse(buffer.trim());
+        if (parsed.message?.content) {
+          onToken(parsed.message.content);
         }
+        if (parsed.done === true) {
+          onComplete();
+          return;
+        }
+      } catch {
+        // Ignore parse errors
       }
     }
 

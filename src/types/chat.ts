@@ -19,7 +19,7 @@ export interface Message {
 
 export interface AIModel {
   id: string;
-  modelId: string; // Actual model identifier for API calls (e.g., 'ai/gpt-oss')
+  modelId: string; 
   name: string;
   description: string;
   status: 'ready' | 'loading' | 'offline';

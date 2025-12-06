@@ -11,8 +11,8 @@ export function WelcomeScreen() {
       </div>
       
       <h1 className="text-3xl font-bold">
-        <span className="gradient-text">FancyChat</span>
-        <span className="text-foreground"> AI</span>
+        <span className="gradient-text">Local Chat</span>
+        <span className="gradient-text"> AI</span>
       </h1>
     </div>
   );

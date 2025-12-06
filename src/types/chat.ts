@@ -3,15 +3,17 @@ export interface ChatFile {
   name: string;
   type: string;
   size: number;
+  url : string;
+  content: string;
   preview?: string;
 }
 
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
-  content: string;
+  content: string; 
   timestamp: Date;
-  files?: ChatFile[];
+  files?: ChatFile[];  
   isStreaming?: boolean;
 }
 

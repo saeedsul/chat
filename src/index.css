@@ -179,3 +179,63 @@
   background-color: rgba(155, 155, 155, 0.5);
   border-radius: 20px;
 }
+
+/* In your global CSS or component styles */
+.messages-container {
+  z-index: 1 !important;
+  /* Lower than dropdown */
+}
+
+.model-selector-dropdown {
+  z-index: 9999 !important;
+}
+
+/* CSS fix for consistent light theme application */
+.app-container {
+  background-color: #ffffff;
+  color: #333333;
+  min-height: 100vh;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.header,
+.settings-panel,
+.footer {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.settings-option {
+  color: #495057;
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
+.settings-option:hover {
+  background-color: #e9ecef;
+}
+
+.active-theme {
+  color: #0d6efd;
+  font-weight: 600;
+}
+
+:root {
+  --light-bg: #ffffff;
+  --light-text: #333333;
+  --light-secondary: #6c757d;
+  --light-border: #dee2e6;
+}
+
+.light-theme {
+  background-color: var(--light-bg);
+  color: var(--light-text);
+}
+
+.light-theme .header,
+.light-theme .main-content,
+.light-theme .footer {
+  background-color: var(--light-bg);
+  color: var(--light-text);
+  border-color: var(--light-border);
+}

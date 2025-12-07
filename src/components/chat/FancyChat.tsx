@@ -89,6 +89,77 @@ export function FancyChat() {
     return sections;
   }, []);
 
+ // FIXED: isValidBase64 function
+const isValidBase64 = useCallback((str: string): boolean => {
+  if (!str || str.length === 0) return false;
+  
+  // Remove whitespace and data URL prefix if present
+  const cleanStr = str.trim().replace(/^data:[^;]+;base64,/, '');
+  
+  // Base64 regex (allows for padding)
+  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+  if (!base64Regex.test(cleanStr)) {
+    return false;
+  }
+  
+  try {
+    // Try to decode
+    atob(cleanStr);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}, []);
+
+  // Helper function to detect programming language for code blocks
+  const detectFileLanguage = useCallback((filename: string, mimeType: string): string => {
+    const extension = filename.split('.').pop()?.toLowerCase() || '';
+    
+    const languageMap: Record<string, string> = {
+      'js': 'javascript',
+      'jsx': 'jsx',
+      'ts': 'typescript',
+      'tsx': 'tsx',
+      'py': 'python',
+      'java': 'java',
+      'c': 'c',
+      'cpp': 'cpp',
+      'h': 'c',
+      'hpp': 'cpp',
+      'html': 'html',
+      'htm': 'html',
+      'css': 'css',
+      'json': 'json',
+      'xml': 'xml',
+      'md': 'markdown',
+      'txt': 'text',
+      'sh': 'bash',
+      'bash': 'bash',
+      'sql': 'sql',
+      'php': 'php',
+      'rb': 'ruby',
+      'go': 'go',
+      'rs': 'rust',
+      'swift': 'swift',
+      'kt': 'kotlin',
+      'scala': 'scala',
+    };
+    
+    if (languageMap[extension]) {
+      return languageMap[extension];
+    }
+    
+    // Fallback based on mime type
+    if (mimeType.includes('javascript')) return 'javascript';
+    if (mimeType.includes('typescript')) return 'typescript';
+    if (mimeType.includes('json')) return 'json';
+    if (mimeType.includes('xml')) return 'xml';
+    if (mimeType.includes('html')) return 'html';
+    if (mimeType.includes('css')) return 'css';
+    
+    return 'text';
+  }, []);
+
   // FIXED: Main function to send messages to the model
   const sendToModel = useCallback(async (userMessage: Message) => {
     if (!selectedModel || isProcessingRef.current) {
@@ -100,34 +171,86 @@ export function FancyChat() {
     abortControllerRef.current = new AbortController();
 
     try { 
+      // Build the initial prompt
+      let prompt = userMessage.content;
+      
+      // Handle files if present
+      if (userMessage.files && userMessage.files.length > 0) { 
+        
+        // Add clear instruction that files are included
+        prompt += '\n\n=== ATTACHED FILES ===\n\n';
+        
+        for (const file of userMessage.files) { 
+          
+          try {
+            // Try to decode base64 content
+           let fileContent = '';
 
-      // Extract images from the user message files
-      const imageFiles = userMessage.files?.filter(file => file.type.startsWith('image/')) || [];
-      const images = imageFiles.map(file => {
-        // Remove data URL prefix if present, keep only base64
-        const base64Content = file.content.includes(',') 
-          ? file.content.split(',')[1] 
-          : file.content;
-        return base64Content;
-      });
-         
+            if (isValidBase64(file.content)) {
+              try {
+                fileContent = atob(file.content); 
+              } catch (decodeError) { 
+                // Check if it's a data URL
+                if (file.content.startsWith('data:')) {
+                  try {
+                    const base64Part = file.content.split(',')[1];
+                    fileContent = atob(base64Part);
+                  } catch (e) {
+                    fileContent = file.content;
+                  }
+                } else {
+                  fileContent = file.content;
+                }
+              }
+            } else {
+              // If not base64, check if it's already plain text
+              try {
+                // Try to decode as UTF-8
+                fileContent = decodeURIComponent(escape(file.content));
+              } catch (e) {
+                fileContent = file.content;
+              }
+            }
+            
+            // Add file to prompt with clear formatting
+            prompt += `--- FILE: ${file.name} ---\n`;
+            prompt += `Type: ${file.type}\n`;
+            prompt += `Size: ${(file.size / 1024).toFixed(1)} KB\n\n`;
+            
+            // Determine language for code block
+            const language = detectFileLanguage(file.name, file.type);
+            prompt += `\`\`\`${language}\n`;
+            
+            // Limit content to avoid hitting token limits
+            const maxFileContentLength = 10000;
+            if (fileContent.length > maxFileContentLength) {
+              prompt += fileContent.substring(0, maxFileContentLength);
+              prompt += `\n\n[File truncated. Original length: ${fileContent.length} characters]\n`;
+            } else {
+              prompt += fileContent + '\n';
+            }
+            
+            prompt += `\`\`\`\n\n`;
+            
+          } catch (error) {
+            console.error(`✗ Error processing file ${file.name}:`, error);
+            prompt += `--- FILE: ${file.name} ---\n`;
+            prompt += `Error: Could not read file content\n\n`;
+          }
+        }
+        
+        prompt += '=== END OF ATTACHED FILES ===\n\n';
+        prompt += 'Based on the files above, please help me with my question.';
+      }
+ 
+
       // Build the request body
       const requestBody: any = {
         model: selectedModel.modelId,
-        prompt: userMessage.content,
+        prompt: prompt,
         stream: true
       };
-
-      // Add images ONLY if model supports images AND we have images
-      if (images.length > 0) {
-        if (selectedModel.supportsImages) {
-          requestBody.images = images; 
-        } else {
-          console.warn('⚠️ Model does not support images, skipping');
-          toast.warning(`${selectedModel.name} doesn't support images. Images will be ignored.`);
-        }
-      }  
-
+ 
       // Make request to proxy
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -140,11 +263,7 @@ export function FancyChat() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('API Response Error:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText
-        });
+        console.error('API Response Error:', errorText);
         throw new Error(`API request failed: ${response.status} ${response.statusText}`);
       }
 
@@ -160,10 +279,6 @@ export function FancyChat() {
       // Add AI message immediately to show spinner
       setMessages(prev => [...prev, aiMessage]);
       
-      // Re-enable auto-scroll for new response
-      autoScrollRef.current = true;
-      userScrolledRef.current = false;
-
       // Handle streaming response
       const reader = response.body?.getReader();
       if (!reader) {
@@ -173,7 +288,6 @@ export function FancyChat() {
       const decoder = new TextDecoder();
       let buffer = '';
       let aiResponse = '';
-      let hasReceivedFirstToken = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -191,7 +305,6 @@ export function FancyChat() {
             
             if (parsed.response) {
               aiResponse += parsed.response;
-              hasReceivedFirstToken = true;
               
               // Update message immediately for each token
               setMessages(prev => prev.map(msg => 
@@ -215,18 +328,6 @@ export function FancyChat() {
         }
       }
 
-      // Process remaining buffer
-      if (buffer.trim()) {
-        try {
-          const parsed = JSON.parse(buffer.trim());
-          if (parsed.response) {
-            aiResponse += parsed.response;
-          }
-        } catch (e) {
-          // Ignore
-        }
-      }
-
       // Mark as complete
       setMessages(prev => prev.map(msg => 
         msg.id === aiMessage.id 
@@ -235,18 +336,88 @@ export function FancyChat() {
       ));
 
     } catch (error) {
+      console.error('Error in sendToModel:', error);
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log('Request aborted');
+        toast.info('Request cancelled');
       } else {
-        console.error('Error in sendToModel:', error);
-        toast.error(`Failed to get response: ${(error as Error).message}`);
+        toast.error(`Failed: ${(error as Error).message}`);
       }
     } finally {
       setIsStreaming(false);
       isProcessingRef.current = false;
       abortControllerRef.current = null;
     }
-  }, [selectedModel]);
+  }, [selectedModel, isValidBase64, detectFileLanguage]);
+
+// FIXED: processFile function (replace existing one)
+const processFile = useCallback(async (file: File): Promise<ChatFile> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onloadend = () => {
+      try {
+        let base64Content: string;
+        let url: string;
+        
+        if (file.type.startsWith('image/')) {
+          // For images, read as Data URL
+          const content = reader.result as string;
+          base64Content = content.split(',')[1] || content;
+          url = content;
+        } else if (file.type.startsWith('text/') || 
+                   SUPPORTED_FILE_TYPES.documents.includes(file.type) ||
+                   SUPPORTED_FILE_TYPES.code.includes(file.type)) {
+          // For text-based files, read as text and encode to base64
+          const textContent = reader.result as string;
+          base64Content = btoa(unescape(encodeURIComponent(textContent))); // Proper UTF-8 encoding
+          url = `data:${file.type};base64,${base64Content}`;
+        } else {
+          // For binary files (like PDF), read as ArrayBuffer
+          const arrayBuffer = reader.result as ArrayBuffer;
+          const bytes = new Uint8Array(arrayBuffer);
+          
+          // Convert bytes to base64
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          base64Content = btoa(binary);
+          url = `data:${file.type};base64,${base64Content}`;
+        }
+        
+        const chatFile: ChatFile = {
+          id: crypto.randomUUID(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          content: base64Content,
+          url: url,
+        };
+        
+        resolve(chatFile);
+      } catch (error) {
+        console.error(`Error processing file ${file.name}:`, error);
+        reject(new Error(`Failed to process file: ${file.name}`));
+      }
+    };
+    
+    reader.onerror = () => {
+      reject(new Error(`Failed to read file: ${file.name}`));
+    };
+    
+    // Choose reader method based on file type
+    if (file.type.startsWith('image/')) {
+      reader.readAsDataURL(file);
+    } else if (file.type.startsWith('text/') || 
+               SUPPORTED_FILE_TYPES.documents.includes(file.type) ||
+               SUPPORTED_FILE_TYPES.code.includes(file.type)) {
+      reader.readAsText(file, 'UTF-8');
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
+  });
+}, []);
+ 
 
   // FIXED: Handle sending messages
   const handleSend = useCallback((content: string, files: ChatFile[]) => {
@@ -264,7 +435,7 @@ export function FancyChat() {
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: content.trim(),
+      content: content,
       timestamp: new Date(),
       files: files.length > 0 ? files : undefined,
     }; 
@@ -277,7 +448,7 @@ export function FancyChat() {
       sendToModel(userMessage);
     }, 0);
 
-  }, [sendToModel]);
+  }, [sendToModel, isValidBase64]);
 
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
@@ -321,23 +492,35 @@ export function FancyChat() {
     setIsDragOver(false);
   }, []);
 
+  const validateFileSize = useCallback((file: File): boolean => {
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  if (file.size > maxSize) {
+    toast.error(`${file.name} is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max: 5MB`);
+    return false;
+  }
+  return true;
+}, []);
+
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
 
-    const supportedFiles = files.filter(file => {
-      const type = file.type;
-      return (
-        SUPPORTED_FILE_TYPES.images.includes(type) ||
-        SUPPORTED_FILE_TYPES.documents.includes(type) ||
-        SUPPORTED_FILE_TYPES.code.includes(type) ||
-        type.startsWith('text/')
-      );
-    });
+      // Filter for supported types AND valid size
+      const supportedFiles = files.filter(file => {
+        if (!validateFileSize(file)) return false;
+        
+        const type = file.type;
+        return (
+          SUPPORTED_FILE_TYPES.images.includes(type) ||
+          SUPPORTED_FILE_TYPES.documents.includes(type) ||
+          SUPPORTED_FILE_TYPES.code.includes(type) ||
+          type.startsWith('text/')
+        );
+      });
 
     if (supportedFiles.length === 0) {
       toast.error('No supported files. Supported: images, PDF, text, code');
@@ -354,7 +537,7 @@ export function FancyChat() {
       toast.success(`Added ${processedFiles.length} file(s)`);
       setDraggedFiles(supportedFiles);
       
-      // FIXED: Create message with files and send
+      // Create message with files and send
       const fileMessage: Message = {
         id: crypto.randomUUID(),
         role: 'user',
@@ -369,35 +552,7 @@ export function FancyChat() {
         sendToModel(fileMessage);
       }, 0);
     }
-  }, [sendToModel]);
-
-  const processFile = async (file: File): Promise<ChatFile> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      
-      reader.onloadend = () => {
-        const content = reader.result as string;
-        const base64Content = content.split(',')[1] || content;
-        
-        const chatFile: ChatFile = {
-          id: crypto.randomUUID(),
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          content: base64Content,
-          url: content.startsWith('data:') ? content : `data:${file.type};base64,${base64Content}`,
-        };
-        
-        resolve(chatFile);
-      };
-      
-      if (file.type.startsWith('image/')) {
-        reader.readAsDataURL(file);
-      } else {
-        reader.readAsText(file);
-      }
-    });
-  };
+  }, [sendToModel, processFile]);
 
   const copyMessageToClipboard = useCallback(async (message: Message) => {
     let textToCopy = message.content;
@@ -453,30 +608,30 @@ export function FancyChat() {
   };
 
   // Add this useEffect to track user scroll
-useEffect(() => {
-  const container = messagesContainerRef.current;
-  if (!container) return;
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
 
-  const handleScroll = () => {
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-    
-    // If user scrolls up, disable auto-scroll
-    if (!isAtBottom) {
-      userScrolledRef.current = true;
-      autoScrollRef.current = false;
-    }
-    
-    // If user scrolls to bottom, re-enable auto-scroll
-    if (isAtBottom) {
-      userScrolledRef.current = false;
-      autoScrollRef.current = true;
-    }
-  };
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      
+      // If user scrolls up, disable auto-scroll
+      if (!isAtBottom) {
+        userScrolledRef.current = true;
+        autoScrollRef.current = false;
+      }
+      
+      // If user scrolls to bottom, re-enable auto-scroll
+      if (isAtBottom) {
+        userScrolledRef.current = false;
+        autoScrollRef.current = true;
+      }
+    };
 
-  container.addEventListener('scroll', handleScroll);
-  return () => container.removeEventListener('scroll', handleScroll);
-}, []);
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const scrollToBottom = () => {
     if (messagesContainerRef.current) {
@@ -542,6 +697,7 @@ useEffect(() => {
       }
     };
   }, []);
+ 
 
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-gray-950 transition-colors">

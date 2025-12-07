@@ -48,26 +48,39 @@ export function ChatMessage({ message, isDarkMode = false }: ChatMessageProps) {
               {/* File attachments */}
               {message.files && message.files.length > 0 && (
                 <div className="mt-3 space-y-2">
-                  {message.files.map(file => (
-                    <div key={file.id} className="flex items-center gap-2">
-                      {file.type.startsWith('image/') ? (
-                        <img
-                          src={file.url}
-                          alt={file.name}
-                          className="max-w-sm rounded-lg border border-gray-200 dark:border-gray-700"
-                        />
-                      ) : (
-                        <div className="px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Attachments ({message.files.length})
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {message.files.map((file) => (
+                      <div
+                        key={file.id}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700"
+                      >
+                        {file.type.startsWith('image/') ? (
+                          <img
+                            src={file.url}
+                            alt={file.name}
+                            className="w-12 h-12 object-cover rounded-md"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 flex items-center justify-center bg-blue-100 dark:bg-blue-900 rounded-md">
+                            <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                              {file.name.split('.').pop()?.toUpperCase() || 'FILE'}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">
                             {file.name}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             {(file.size / 1024).toFixed(1)} KB
-                          </p>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -84,10 +97,15 @@ export function ChatMessage({ message, isDarkMode = false }: ChatMessageProps) {
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <ReactMarkdown
                   components={{
-                    code({ node, inline, className, children, ...props }) {
+                    code({ node, inline, className, children, ...props }: any) {
                       const match = /language-(\w+)/.exec(className || '');
                       const codeString = String(children).replace(/\n$/, '');
                       const codeId = `code-${Math.random().toString(36).substr(2, 9)}`;
+
+                      // Create filtered props without ReactMarkdown-specific props
+                      const filteredProps = { ...props };
+                      delete (filteredProps as any).inline;
+                      delete (filteredProps as any).node;
 
                       return !inline && match ? (
                         <div className="relative group my-4">
@@ -118,7 +136,6 @@ export function ChatMessage({ message, isDarkMode = false }: ChatMessageProps) {
                           <SyntaxHighlighter
                             style={isDarkMode ? oneDark : oneLight}
                             language={match[1]}
-                            PreTag="div"
                             customStyle={{
                               margin: 0,
                               borderTopLeftRadius: 0,
@@ -128,7 +145,7 @@ export function ChatMessage({ message, isDarkMode = false }: ChatMessageProps) {
                               fontSize: '0.875rem',
                               lineHeight: '1.5',
                             }}
-                            {...props}
+                            {...filteredProps}
                           >
                             {codeString}
                           </SyntaxHighlighter>
@@ -136,62 +153,62 @@ export function ChatMessage({ message, isDarkMode = false }: ChatMessageProps) {
                       ) : (
                         <code
                           className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-sm font-mono text-red-600 dark:text-red-400"
-                          {...props}
+                          {...filteredProps}
                         >
                           {children}
                         </code>
                       );
                     },
-                    p({ children }) {
+                    p({ children }: any) {
                       return (
                         <p className="text-gray-900 dark:text-gray-100 leading-7 mb-4 last:mb-0">
                           {children}
                         </p>
                       );
                     },
-                    ul({ children }) {
+                    ul({ children }: any) {
                       return (
                         <ul className="list-disc list-inside space-y-2 text-gray-900 dark:text-gray-100 mb-4">
                           {children}
                         </ul>
                       );
                     },
-                    ol({ children }) {
+                    ol({ children }: any) {
                       return (
                         <ol className="list-decimal list-inside space-y-2 text-gray-900 dark:text-gray-100 mb-4">
                           {children}
                         </ol>
                       );
                     },
-                    h1({ children }) {
+                    h1({ children }: any) {
                       return (
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4 mt-6">
                           {children}
                         </h1>
                       );
                     },
-                    h2({ children }) {
+                    h2({ children }: any) {
                       return (
                         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3 mt-5">
                           {children}
                         </h2>
                       );
                     },
-                    h3({ children }) {
+                    h3({ children }: any) {
                       return (
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 mt-4">
                           {children}
                         </h3>
                       );
                     },
-                    blockquote({ children }) {
+                    blockquote({ children }: any) {
                       return (
                         <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-50 dark:bg-blue-900/20 text-gray-800 dark:text-gray-200 italic">
                           {children}
                         </blockquote>
                       );
                     },
-                    a({ href, children }) {
+                    a({ href, children }: any) {
                       return (
                         <a
                           href={href}

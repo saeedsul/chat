@@ -22,6 +22,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const [showConvertBanner, setShowConvertBanner] = useState(false);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -31,31 +32,6 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
     }
   }, [input]);
 
-  // Detect if text looks like code
-  const detectIfLooksLikeCode = (text: string): boolean => {
-    const trimmedText = text.trim();
-    if (!trimmedText) return false;
-    
-    const codePatterns = [
-      /\b(import|export|from|require)\s+/,
-      /\b(function|const|let|var|class|interface|type|enum)\s+\w/,
-      /[\{\}\(\)\[\];=<>]/,
-      /\/\/|\/\*|\*\/|#/,
-      /\b(if|else|for|while|return|try|catch|throw|switch|case|break)\b/
-    ];
-    
-    const lineCount = trimmedText.split('\n').length;
-    const avgLineLength = trimmedText.length / lineCount;
-    
-    // More likely to be code if:
-    const hasCodePatterns = codePatterns.some(pattern => pattern.test(trimmedText));
-    const hasMultipleLines = lineCount > 5;
-    const reasonableLineLength = avgLineLength > 20 && avgLineLength < 120;
-    const hasIndentation = trimmedText.includes('  ') || trimmedText.includes('\t');
-    
-    return (hasCodePatterns && hasMultipleLines) || (reasonableLineLength && hasIndentation);
-  };
-
   // Detect filename from text content
   const detectFileNameFromText = (text: string): string => {
     // Try to detect React component name
@@ -64,14 +40,12 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
       return `${componentMatch[1]}.jsx`;
     }
     
-    // Try to detect TypeScript
-    if (text.includes('interface ') || text.includes('type ') || text.includes(': string') || text.includes(': number')) {
-      return `component_${Date.now()}.tsx`;
-    }
-    
     // Try to detect file extension from content
     if (text.includes('import React') || text.includes('from \'react\'')) {
       return `react_component_${Date.now()}.jsx`;
+    }
+    if (text.includes('interface ') || text.includes('type ') || text.includes(': string') || text.includes(': number')) {
+      return `component_${Date.now()}.tsx`;
     }
     if (text.includes('def ') || text.includes('import ') || text.includes('print(')) {
       return `script_${Date.now()}.py`;
@@ -213,9 +187,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
         if (file.size > MAX_FILE_SIZE) {
           toast.error(`${file.name} exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
           continue;
-        }
-        
-        console.log(`Processing file: ${file.name} (${file.size} bytes, ${file.type})`);
+        } 
         
         const chatFile = await processFileToBase64(file);
         
@@ -223,9 +195,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
         if (!chatFile.content || chatFile.content.length === 0) {
           toast.error(`Failed to read ${file.name}`);
           continue;
-        }
-        
-        console.log(`✓ Processed ${file.name}: ${chatFile.content.length} chars base64`);
+        } 
         processedFiles.push(chatFile);
         
       } catch (error) {
@@ -251,11 +221,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
     processFiles([file]).then(processedFiles => {
       if (processedFiles.length > 0) {
         setFiles(prev => [...prev, ...processedFiles]);
-        setInput(''); // Clear the text input
-        toast.success(`Text converted to file: ${fileName}`, {
-          description: 'File is ready to send. Add a message if needed.',
-          duration: 5000,
-        });
+        setInput('');  
       }
     }).catch(error => {
       console.error('Error converting text to file:', error);
@@ -263,53 +229,17 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
     });
   };
 
-  // Handle large text conversion
-  const handleLargeTextConversion = (text: string) => {
-    const trimmedText = text.trim();
-    
-    if (trimmedText.length < 3000) {
-      return false; // Don't convert small text
-    }
-    
-    const isCode = detectIfLooksLikeCode(trimmedText);
-    
-    if (isCode) {
-      // Ask user if they want to convert to file
-      const shouldConvert = window.confirm(
-        `Your ${trimmedText.length} character code/text looks large. ` +
-        `Would you like to convert it to a file attachment for better handling?`
-      );
-      
-      if (shouldConvert) {
-        convertTextToFile(trimmedText);
-        return true;
-      }
-    }
-    
-    return false;
-  };
-
-  // Check for large text when input changes
+  // Monitor input for large text
   useEffect(() => {
     const trimmedInput = input.trim();
     
-    // Don't process if input is empty or already has files
-    if (!trimmedInput || files.length > 0 || isProcessing) {
-      return;
+    // Show banner if text is large
+    if (trimmedInput.length > 5000 && files.length === 0) {
+      setShowConvertBanner(true);
+    } else {
+      setShowConvertBanner(false);
     }
-
-    // Conditions for auto-conversion to file:
-    const isLargeText = trimmedInput.length > 5000; // Increased threshold
-    const looksLikeCode = detectIfLooksLikeCode(trimmedInput);
-    
-    if (isLargeText && looksLikeCode) {
-      // Show a notification instead of auto-converting
-      toast.info('Large code/text detected', {
-        description: 'Consider using the "Convert to file" button for better handling',
-        duration: 4000,
-      });
-    }
-  }, [input, files.length, isProcessing]);
+  }, [input, files.length]);
 
   // Handle file selection
   const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -320,10 +250,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
     
     const processedFiles = await processFiles(fileList);
     if (processedFiles.length > 0) {
-      setFiles(prev => [...prev, ...processedFiles]);
-      toast.success(`Added ${processedFiles.length} file(s)`, {
-        description: 'Files are ready to send'
-      });
+      setFiles(prev => [...prev, ...processedFiles]); 
     }
     
     // Reset file input
@@ -361,8 +288,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
       
       const processedFiles = await processFiles(droppedFiles);
       if (processedFiles.length > 0) {
-        setFiles(prev => [...prev, ...processedFiles]);
-        toast.success(`Dropped ${processedFiles.length} file(s)`);
+        setFiles(prev => [...prev, ...processedFiles]); 
       }
     };
 
@@ -420,46 +346,34 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
           toast.success(`Pasted ${processedFiles.length} image(s)`);
         }
       }
+      return;
     }
-    
-    // For text paste, check if it's large and looks like code
+     
     const text = e.clipboardData.getData('text');
-    if (text && text.length > 5000 && detectIfLooksLikeCode(text)) {
-      // Don't auto-convert, just show a notification
+    if (text && text.length > 5000) { 
       setTimeout(() => {
-        toast.info('Large code/text pasted', {
-          description: 'Consider using "Convert to file" for better handling',
-          duration: 5000,
-        });
-      }, 500);
+        setShowConvertBanner(true);
+      }, 100);
     }
   };
 
-  // FIXED: Correct handleSubmit function
   const handleSubmit = () => {
     if (isStreaming || isProcessing) return;
     
     const trimmedInput = input.trim();
-    
-    // Check if we should suggest file conversion
-    if (trimmedInput.length > 3000 && files.length === 0) {
-      const converted = handleLargeTextConversion(trimmedInput);
-      if (converted) {
-        return; // Don't send, user is converting to file
-      }
-    }
 
     if (!trimmedInput && files.length === 0) {
       toast.warning('Please enter a message or attach a file');
       return;
     }
 
-    // FIX: Use the 'files' state variable which contains processed ChatFile objects
+    // Send normally (let user decide to convert or not)
     onSend(trimmedInput, files);
     
     // Reset state
     setInput('');
     setFiles([]);
+    setShowConvertBanner(false);
     
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -534,7 +448,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
         </div>
       )}
 
-      {/* File attachments preview - IMPROVED */}
+      {/* File attachments preview */}
       {files.length > 0 && (
         <div className="mb-3">
           <div className="flex items-center justify-between mb-2">
@@ -619,7 +533,6 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
 
       {/* Input container */}
       <div className="relative flex items-end gap-2 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-2xl shadow-sm hover:shadow-md transition-shadow focus-within:border-blue-500 dark:focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20">
-        
         {/* Attach button */}
         <button
           type="button"
@@ -631,12 +544,12 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
           <Paperclip className="w-5 h-5" />
         </button>
 
-        {/* Hidden file input - accepts ALL file types */}
+        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept="*/*"  // Accept all file types
+          accept="*/*"
           onChange={handleFileSelect}
           className="hidden"
         />
@@ -701,6 +614,39 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
         )}
       </div>
 
+      {/* Conversion banner for large text */}
+      {showConvertBanner && (
+        <div className="mt-2 px-3 py-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-200">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                Large code/text pasted
+              </p>
+              <p className="text-xs text-orange-600 dark:text-orange-300">
+                {input.length} chars (consider saving as file)
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleManualConvertToFile}
+              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 dark:bg-orange-600 dark:hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Convert to file
+            </button>
+            <button
+              onClick={() => setShowConvertBanner(false)}
+              className="p-1.5 hover:bg-orange-100 dark:hover:bg-orange-800/50 rounded-lg transition-colors"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Full file preview modal */}
       {showFullPreview && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -728,7 +674,7 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
           </div>
         </div>
       )}
-
+      
       {/* Hint text */}
       <div className="mt-2 px-3 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-3">
@@ -744,15 +690,6 @@ export function ChatInput({ onSend, onStop, disabled, isStreaming, supportsImage
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {input.length > 1000 && (
-            <button
-              onClick={handleManualConvertToFile}
-              className="flex items-center gap-1 text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline"
-            >
-              <FileText className="w-3 h-3" />
-              <span>Convert to file</span>
-            </button>
-          )}
           {supportsImages && (
             <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
               ✓ Vision enabled

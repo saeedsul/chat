@@ -5,10 +5,16 @@ import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { WelcomeScreen } from './WelcomeScreen'; 
 import { toast } from 'sonner';
-import { ChevronUp, ChevronDown, Minimize2, Maximize2, Upload, Copy as CopyIcon, Check as CheckIcon } from 'lucide-react';
-import { ThinkingPulse } from './ThinkingSpinner';
- 
- 
+import { 
+  ChevronUp, 
+  ChevronDown, 
+  Minimize2, 
+  Maximize2, 
+  Upload, 
+  Copy as CopyIcon, 
+  Check as CheckIcon 
+} from 'lucide-react';
+
 const defaultModels: AIModel[] = [
   { 
     id: 'llama3.2:latest', 
@@ -53,23 +59,26 @@ const SUPPORTED_FILE_TYPES = {
 };
 
 export function FancyChat() {
+  // State
   const [messages, setMessages] = useState<Message[]>([]);
   const [models] = useState<AIModel[]>(defaultModels);
   const [selectedModel, setSelectedModel] = useState<AIModel>(defaultModels[0]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [collapsibleSections, setCollapsibleSections] = useState<CollapsibleSection[]>([]);
   const [showCollapseControls, setShowCollapseControls] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [copiedFiles, setCopiedFiles] = useState<ChatFile[]>([]);
+  const [showThinkingSpinner, setShowThinkingSpinner] = useState(false);
+  
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isProcessingRef = useRef(false);
   const autoScrollRef = useRef(true);
   const userScrolledRef = useRef(false);
 
+  // Helper Functions
   const organizeMessagesIntoSections = useCallback((msgs: Message[]): CollapsibleSection[] => {
     const sections: CollapsibleSection[] = [];
     const SECTION_SIZE = 5;
@@ -89,67 +98,40 @@ export function FancyChat() {
     return sections;
   }, []);
 
- // FIXED: isValidBase64 function
-const isValidBase64 = useCallback((str: string): boolean => {
-  if (!str || str.length === 0) return false;
-  
-  // Remove whitespace and data URL prefix if present
-  const cleanStr = str.trim().replace(/^data:[^;]+;base64,/, '');
-  
-  // Base64 regex (allows for padding)
-  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-  if (!base64Regex.test(cleanStr)) {
-    return false;
-  }
-  
-  try {
-    // Try to decode
-    atob(cleanStr);
-    return true;
-  } catch (err) {
-    return false;
-  }
-}, []);
+  const isValidBase64 = useCallback((str: string): boolean => {
+    if (!str || str.length === 0) return false;
+    
+    const cleanStr = str.trim().replace(/^data:[^;]+;base64,/, '');
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    
+    if (!base64Regex.test(cleanStr)) {
+      return false;
+    }
+    
+    try {
+      atob(cleanStr);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }, []);
 
-  // Helper function to detect programming language for code blocks
   const detectFileLanguage = useCallback((filename: string, mimeType: string): string => {
     const extension = filename.split('.').pop()?.toLowerCase() || '';
     
     const languageMap: Record<string, string> = {
-      'js': 'javascript',
-      'jsx': 'jsx',
-      'ts': 'typescript',
-      'tsx': 'tsx',
-      'py': 'python',
-      'java': 'java',
-      'c': 'c',
-      'cpp': 'cpp',
-      'h': 'c',
-      'hpp': 'cpp',
-      'html': 'html',
-      'htm': 'html',
-      'css': 'css',
-      'json': 'json',
-      'xml': 'xml',
-      'md': 'markdown',
-      'txt': 'text',
-      'sh': 'bash',
-      'bash': 'bash',
-      'sql': 'sql',
-      'php': 'php',
-      'rb': 'ruby',
-      'go': 'go',
-      'rs': 'rust',
-      'swift': 'swift',
-      'kt': 'kotlin',
-      'scala': 'scala',
+      'js': 'javascript', 'jsx': 'jsx', 'ts': 'typescript', 'tsx': 'tsx',
+      'py': 'python', 'java': 'java', 'c': 'c', 'cpp': 'cpp', 'h': 'c', 'hpp': 'cpp',
+      'html': 'html', 'htm': 'html', 'css': 'css', 'json': 'json', 'xml': 'xml',
+      'md': 'markdown', 'txt': 'text', 'sh': 'bash', 'bash': 'bash', 'sql': 'sql',
+      'php': 'php', 'rb': 'ruby', 'go': 'go', 'rs': 'rust', 'swift': 'swift',
+      'kt': 'kotlin', 'scala': 'scala',
     };
     
     if (languageMap[extension]) {
       return languageMap[extension];
     }
     
-    // Fallback based on mime type
     if (mimeType.includes('javascript')) return 'javascript';
     if (mimeType.includes('typescript')) return 'typescript';
     if (mimeType.includes('json')) return 'json';
@@ -158,70 +140,124 @@ const isValidBase64 = useCallback((str: string): boolean => {
     if (mimeType.includes('css')) return 'css';
     
     return 'text';
+  }, []); 
+
+  const processFile = useCallback(async (file: File): Promise<ChatFile> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onloadend = () => {
+        try {
+          let base64Content: string;
+          let url: string;
+          
+          if (file.type.startsWith('image/')) {
+            const content = reader.result as string;
+            base64Content = content.split(',')[1] || content;
+            url = content;
+          } else if (
+            file.type.startsWith('text/') || 
+            SUPPORTED_FILE_TYPES.documents.includes(file.type) ||
+            SUPPORTED_FILE_TYPES.code.includes(file.type)
+          ) {
+            const textContent = reader.result as string;
+            base64Content = btoa(unescape(encodeURIComponent(textContent))); 
+            url = `data:${file.type};base64,${base64Content}`;
+          } else {
+            const arrayBuffer = reader.result as ArrayBuffer;
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            base64Content = btoa(binary);
+            url = `data:${file.type};base64,${base64Content}`;
+          }
+          
+          resolve({
+            id: crypto.randomUUID(),
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            content: base64Content,
+            url: url,
+          });
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
+          reject(new Error(`Failed to process file: ${file.name}`));
+        }
+      };
+      
+      reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+      
+      if (file.type.startsWith('image/')) {
+        reader.readAsDataURL(file);
+      } else if (
+        file.type.startsWith('text/') || 
+        SUPPORTED_FILE_TYPES.documents.includes(file.type) ||
+        SUPPORTED_FILE_TYPES.code.includes(file.type)
+      ) {
+        reader.readAsText(file, 'UTF-8');
+      } else {
+        reader.readAsArrayBuffer(file);
+      }
+    });
   }, []);
 
-  // FIXED: Main function to send messages to the model
-  const sendToModel = useCallback(async (userMessage: Message) => {
-    if (!selectedModel || isProcessingRef.current) {
-      return;
+  const validateFileSize = useCallback((file: File): boolean => {
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      toast.error(`${file.name} is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max: 5MB`);
+      return false;
     }
+    return true;
+  }, []);
+
+  // Main Functions
+  const sendToModel = useCallback(async (userMessage: Message) => {
+    if (!selectedModel || isProcessingRef.current) return;
 
     setIsStreaming(true);
+    setShowThinkingSpinner(true);
     isProcessingRef.current = true;
     abortControllerRef.current = new AbortController();
 
-    try { 
-      // Build the initial prompt
+    const thinkingMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isStreaming: true,
+    };
+    
+    setMessages(prev => [...prev, thinkingMessage]);
+
+    try {
       let prompt = userMessage.content;
-      
-      // Handle files if present
-      if (userMessage.files && userMessage.files.length > 0) { 
-        
-        // Add clear instruction that files are included
+
+      if (userMessage.files && userMessage.files.length > 0) {
         prompt += '\n\n=== ATTACHED FILES ===\n\n';
         
-        for (const file of userMessage.files) { 
-          
+        for (const file of userMessage.files) {
           try {
-            // Try to decode base64 content
-           let fileContent = '';
-
+            let fileContent = '';
             if (isValidBase64(file.content)) {
-              try {
-                fileContent = atob(file.content); 
-              } catch (decodeError) { 
-                // Check if it's a data URL
-                if (file.content.startsWith('data:')) {
-                  try {
-                    const base64Part = file.content.split(',')[1];
-                    fileContent = atob(base64Part);
-                  } catch (e) {
-                    fileContent = file.content;
-                  }
-                } else {
-                  fileContent = file.content;
-                }
-              }
+              fileContent = atob(file.content);
             } else {
-              // If not base64, check if it's already plain text
               try {
-                // Try to decode as UTF-8
                 fileContent = decodeURIComponent(escape(file.content));
               } catch (e) {
                 fileContent = file.content;
               }
             }
-            
-            // Add file to prompt with clear formatting
+
             prompt += `--- FILE: ${file.name} ---\n`;
             prompt += `Type: ${file.type}\n`;
             prompt += `Size: ${(file.size / 1024).toFixed(1)} KB\n\n`;
-            
-            // Determine language for code block
+
             const language = detectFileLanguage(file.name, file.type);
             prompt += `\`\`\`${language}\n`;
-            
-            // Limit content to avoid hitting token limits
+
             const maxFileContentLength = 10000;
             if (fileContent.length > maxFileContentLength) {
               prompt += fileContent.substring(0, maxFileContentLength);
@@ -229,35 +265,26 @@ const isValidBase64 = useCallback((str: string): boolean => {
             } else {
               prompt += fileContent + '\n';
             }
-            
-            prompt += `\`\`\`\n\n`;
-            
+            prompt += '```\n\n';
           } catch (error) {
-            console.error(`✗ Error processing file ${file.name}:`, error);
+            console.error(`Error processing file ${file.name}:`, error);
             prompt += `--- FILE: ${file.name} ---\n`;
-            prompt += `Error: Could not read file content\n\n`;
+            prompt += 'Error: Could not read file content\n\n';
           }
         }
-        
+
         prompt += '=== END OF ATTACHED FILES ===\n\n';
         prompt += 'Based on the files above, please help me with my question.';
       }
- 
 
-      // Build the request body
-      const requestBody: any = {
-        model: selectedModel.modelId,
-        prompt: prompt,
-        stream: true
-      };
- 
-      // Make request to proxy
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: selectedModel.modelId,
+          prompt: prompt,
+          stream: true
+        }),
         signal: abortControllerRef.current.signal
       });
 
@@ -267,27 +294,12 @@ const isValidBase64 = useCallback((str: string): boolean => {
         throw new Error(`API request failed: ${response.status} ${response.statusText}`);
       }
 
-      // Create AI message
-      const aiMessage: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        isStreaming: true
-      };
-
-      // Add AI message immediately to show spinner
-      setMessages(prev => [...prev, aiMessage]);
-      
-      // Handle streaming response
       const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body');
-      }
+      if (!reader) throw new Error('No response body');
 
       const decoder = new TextDecoder();
       let buffer = '';
-      let aiResponse = '';
+      let hasReceivedContent = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -299,128 +311,73 @@ const isValidBase64 = useCallback((str: string): boolean => {
 
         for (const line of lines) {
           if (line.trim() === '') continue;
-          
+
           try {
             const parsed = JSON.parse(line);
+            let chunk = '';
             
             if (parsed.response) {
-              aiResponse += parsed.response;
-              
-              // Update message immediately for each token
-              setMessages(prev => prev.map(msg => 
-                msg.id === aiMessage.id 
-                  ? { ...msg, content: aiResponse, isStreaming: true } 
-                  : msg
-              ));
+              chunk = parsed.response;
+            } else if (typeof parsed === 'string') {
+              chunk = parsed;
+            } else if (parsed.message?.content) {
+              chunk = parsed.message.content;
+            }
+
+            if (chunk) {
+              if (!hasReceivedContent) {
+                setShowThinkingSpinner(false);
+                hasReceivedContent = true;
+              }
+
+              thinkingMessage.content += chunk;
+              setMessages(prev => 
+                prev.map(msg => msg.id === thinkingMessage.id ? { ...thinkingMessage } : msg)
+              );
             }
             
-            if (parsed.done) {
-              setMessages(prev => prev.map(msg => 
-                msg.id === aiMessage.id 
-                  ? { ...msg, isStreaming: false } 
-                  : msg
-              ));
-              break;
+            if (parsed.done === true) break;
+          } catch (error) {
+            if (!hasReceivedContent) {
+              setShowThinkingSpinner(false);
+              hasReceivedContent = true;
             }
-          } catch (e) {
-            console.error('Error parsing stream:', e, 'Line:', line);
+            
+            thinkingMessage.content += line.trim() + ' ';
+            setMessages(prev => 
+              prev.map(msg => msg.id === thinkingMessage.id ? { ...thinkingMessage } : msg)
+            );
           }
         }
       }
 
-      // Mark as complete
-      setMessages(prev => prev.map(msg => 
-        msg.id === aiMessage.id 
-          ? { ...msg, isStreaming: false } 
-          : msg
-      ));
+      thinkingMessage.isStreaming = false;
+      setMessages(prev => 
+        prev.map(msg => msg.id === thinkingMessage.id ? { ...thinkingMessage } : msg)
+      );
 
-    } catch (error) {
-      console.error('Error in sendToModel:', error);
-      if (error instanceof Error && error.name === 'AbortError') {
-        toast.info('Request cancelled');
-      } else {
-        toast.error(`Failed: ${(error as Error).message}`);
-      }
+    } catch (e) {
+      console.error('Error sending message:', e);
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessage.id));
+      
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Error: ${e instanceof Error ? e.message : 'An unexpected error occurred'}`,
+        timestamp: new Date(),
+        isStreaming: false,
+      }]);
     } finally {
       setIsStreaming(false);
+      setShowThinkingSpinner(false);
       isProcessingRef.current = false;
-      abortControllerRef.current = null;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     }
   }, [selectedModel, isValidBase64, detectFileLanguage]);
 
-// FIXED: processFile function (replace existing one)
-const processFile = useCallback(async (file: File): Promise<ChatFile> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onloadend = () => {
-      try {
-        let base64Content: string;
-        let url: string;
-        
-        if (file.type.startsWith('image/')) {
-          // For images, read as Data URL
-          const content = reader.result as string;
-          base64Content = content.split(',')[1] || content;
-          url = content;
-        } else if (file.type.startsWith('text/') || 
-                   SUPPORTED_FILE_TYPES.documents.includes(file.type) ||
-                   SUPPORTED_FILE_TYPES.code.includes(file.type)) {
-          // For text-based files, read as text and encode to base64
-          const textContent = reader.result as string;
-          base64Content = btoa(unescape(encodeURIComponent(textContent))); // Proper UTF-8 encoding
-          url = `data:${file.type};base64,${base64Content}`;
-        } else {
-          // For binary files (like PDF), read as ArrayBuffer
-          const arrayBuffer = reader.result as ArrayBuffer;
-          const bytes = new Uint8Array(arrayBuffer);
-          
-          // Convert bytes to base64
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          base64Content = btoa(binary);
-          url = `data:${file.type};base64,${base64Content}`;
-        }
-        
-        const chatFile: ChatFile = {
-          id: crypto.randomUUID(),
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          content: base64Content,
-          url: url,
-        };
-        
-        resolve(chatFile);
-      } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
-        reject(new Error(`Failed to process file: ${file.name}`));
-      }
-    };
-    
-    reader.onerror = () => {
-      reject(new Error(`Failed to read file: ${file.name}`));
-    };
-    
-    // Choose reader method based on file type
-    if (file.type.startsWith('image/')) {
-      reader.readAsDataURL(file);
-    } else if (file.type.startsWith('text/') || 
-               SUPPORTED_FILE_TYPES.documents.includes(file.type) ||
-               SUPPORTED_FILE_TYPES.code.includes(file.type)) {
-      reader.readAsText(file, 'UTF-8');
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
-  });
-}, []);
- 
-
-  // FIXED: Handle sending messages
-  const handleSend = useCallback((content: string, files: ChatFile[]) => {
+  const handleSend = useCallback(async (content: string, files: ChatFile[]) => {
     if (isProcessingRef.current) {
       toast.warning('Please wait for the current response to complete');
       return;
@@ -429,26 +386,42 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
     if (!content.trim() && files.length === 0) {
       toast.warning('Please enter a message or attach a file');
       return;
-    }  
+    }
 
-    // Create user message WITH files attached
+    const MAX_DIRECT_TEXT_LENGTH = 5000;  
+    let finalContent = content;
+    const finalFiles = [...files];
+
+    if (content.length > MAX_DIRECT_TEXT_LENGTH && files.length === 0) {
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `message_${timestamp}.txt`;
+        const textBlob = new Blob([content], { type: 'text/plain' });
+        const file = new File([textBlob], fileName, { type: 'text/plain' });
+        
+        const chatFile = await processFile(file);
+        finalFiles.push(chatFile);
+        finalContent = `[Large text content attached as file: ${fileName}]\n\nPlease analyze the attached file.`;
+        
+        toast.success(`Large text converted to file: ${fileName}`);
+      } catch (error) {
+        console.error('Error auto-converting to file:', error);
+        toast.error('Failed to convert large text to file');
+        return;
+      }
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: content,
+      content: finalContent,
       timestamp: new Date(),
-      files: files.length > 0 ? files : undefined,
+      files: finalFiles.length > 0 ? finalFiles : undefined,
     }; 
 
-    // Add user message to state
     setMessages(prev => [...prev, userMessage]);
-
-    // Send to model with the complete user message (including files)
-    setTimeout(() => {
-      sendToModel(userMessage);
-    }, 0);
-
-  }, [sendToModel, isValidBase64]);
+    setTimeout(() => sendToModel(userMessage), 0);
+  }, [sendToModel, processFile]); 
 
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
@@ -460,84 +433,35 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
     }
   }, []);
 
-  useEffect(() => {
-    if (messages.length > 5) {
-      const sections = organizeMessagesIntoSections(messages);
-      setCollapsibleSections(sections);
-      setShowCollapseControls(true);
-    } else {
-      setCollapsibleSections([]);
-      setShowCollapseControls(false);
-    }
-  }, [messages, organizeMessagesIntoSections]);
-
-  useEffect(() => {
-    if (autoScrollRef.current && messagesContainerRef.current) {
-      const container = messagesContainerRef.current;
-      requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight;
-      });
-    }
-  }, [messages]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  }, []);
-
-  const validateFileSize = useCallback((file: File): boolean => {
-  const maxSize = 5 * 1024 * 1024; // 5MB
-  if (file.size > maxSize) {
-    toast.error(`${file.name} is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max: 5MB`);
-    return false;
-  }
-  return true;
-}, []);
-
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length === 0) return;
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
 
-      // Filter for supported types AND valid size
-      const supportedFiles = files.filter(file => {
-        if (!validateFileSize(file)) return false;
-        
-        const type = file.type;
-        return (
-          SUPPORTED_FILE_TYPES.images.includes(type) ||
-          SUPPORTED_FILE_TYPES.documents.includes(type) ||
-          SUPPORTED_FILE_TYPES.code.includes(type) ||
-          type.startsWith('text/')
-        );
-      });
+    const supportedFiles = files.filter(file => {
+      if (!validateFileSize(file)) return false;
+      const type = file.type;
+      return (
+        SUPPORTED_FILE_TYPES.images.includes(type) ||
+        SUPPORTED_FILE_TYPES.documents.includes(type) ||
+        SUPPORTED_FILE_TYPES.code.includes(type) ||
+        type.startsWith('text/')
+      );
+    });
 
     if (supportedFiles.length === 0) {
       toast.error('No supported files. Supported: images, PDF, text, code');
       return;
     }
 
-    const processedFiles: ChatFile[] = await Promise.all(
-      supportedFiles.map(async (file) => {
-        return await processFile(file);
-      })
-    );
+    const processedFiles = await Promise.all(supportedFiles.map(file => processFile(file)));
 
     if (processedFiles.length > 0) {
       toast.success(`Added ${processedFiles.length} file(s)`);
-      setDraggedFiles(supportedFiles);
       
-      // Create message with files and send
       const fileMessage: Message = {
         id: crypto.randomUUID(),
         role: 'user',
@@ -547,101 +471,64 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
       };
 
       setMessages(prev => [...prev, fileMessage]);
-      
-      setTimeout(() => {
-        sendToModel(fileMessage);
-      }, 0);
+      setTimeout(() => sendToModel(fileMessage), 0);
     }
-  }, [sendToModel, processFile]);
+  }, [sendToModel, processFile, validateFileSize]);
 
   const copyMessageToClipboard = useCallback(async (message: Message) => {
     let textToCopy = message.content;
     
     if (message.files && message.files.length > 0) {
-      textToCopy += '\n\nFiles:\n' + message.files.map(f => `- ${f.name} (${(f.size / 1024).toFixed(2)} KB)`).join('\n');
+      textToCopy += '\n\nFiles:\n' + message.files.map(f => 
+        `- ${f.name} (${(f.size / 1024).toFixed(2)} KB)`
+      ).join('\n');
     }
     
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopiedMessageId(message.id);
       toast.success('Message copied');
-      
-      setTimeout(() => {
-        setCopiedMessageId(null);
-      }, 2000);
+      setTimeout(() => setCopiedMessageId(null), 2000);
     } catch (err) {
       toast.error('Failed to copy');
     }
   }, []);
 
+  const scrollToBottom = () => {
+    if (messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      autoScrollRef.current = true;
+      userScrolledRef.current = false;
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
+      }, 300);
+    }
+  };
+
   const toggleSectionCollapse = (sectionId: string) => {
     setCollapsibleSections(prev =>
       prev.map(section =>
-        section.id === sectionId
-          ? { ...section, isCollapsed: !section.isCollapsed }
-          : section
+        section.id === sectionId ? { ...section, isCollapsed: !section.isCollapsed } : section
       )
     );
   };
 
   const collapseAllExceptLast = () => {
     setCollapsibleSections(prev =>
-      prev.map((section, index) => ({
-        ...section,
-        isCollapsed: index < prev.length - 1
-      }))
+      prev.map((section, index) => ({ ...section, isCollapsed: index < prev.length - 1 }))
     );
   };
 
   const expandAllSections = () => {
-    setCollapsibleSections(prev =>
-      prev.map(section => ({
-        ...section,
-        isCollapsed: false
-      }))
-    );
+    setCollapsibleSections(prev => prev.map(section => ({ ...section, isCollapsed: false })));
   };
 
   const toggleAutoScroll = () => {
     autoScrollRef.current = !autoScrollRef.current;
     toast.info(autoScrollRef.current ? 'Auto-scroll ON' : 'Auto-scroll OFF');
-  };
-
-  // Add this useEffect to track user scroll
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-      
-      // If user scrolls up, disable auto-scroll
-      if (!isAtBottom) {
-        userScrolledRef.current = true;
-        autoScrollRef.current = false;
-      }
-      
-      // If user scrolls to bottom, re-enable auto-scroll
-      if (isAtBottom) {
-        userScrolledRef.current = false;
-        autoScrollRef.current = true;
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const scrollToBottom = () => {
-    if (messagesContainerRef.current) {
-      autoScrollRef.current = true;
-      userScrolledRef.current = false;
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
-    }
   };
 
   const handleModelSelect = useCallback((model: AIModel) => {
@@ -657,15 +544,11 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
   }, []);
 
   const handleClearChat = useCallback(() => {
-    if (isStreaming) {
-      handleStop();
-    }
+    if (isStreaming) handleStop();
     setMessages([]);
     setCollapsibleSections([]);
     setShowCollapseControls(false);
     setIsDragOver(false);
-    setDraggedFiles([]);
-    setCopiedFiles([]);
     toast.success('Chat cleared');
   }, [isStreaming, handleStop]);
 
@@ -690,6 +573,78 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
     toast.success('Chat exported');
   }, [messages, selectedModel]);
 
+  // Effects
+  useEffect(() => {
+    if (messages.length > 5) {
+      const sections = organizeMessagesIntoSections(messages);
+      setCollapsibleSections(sections);
+      setShowCollapseControls(true);
+    } else {
+      setCollapsibleSections([]);
+      setShowCollapseControls(false);
+    }
+  }, [messages, organizeMessagesIntoSections]);
+
+  useEffect(() => {
+    if (autoScrollRef.current && !userScrolledRef.current && messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      
+      if (distanceFromBottom < 100) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+        });
+      }
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      
+      clearTimeout(scrollTimeout);
+      
+      if (distanceFromBottom > 50) {
+        userScrolledRef.current = true;
+        autoScrollRef.current = false;
+      } else if (distanceFromBottom < 10) {
+        userScrolledRef.current = false;
+        autoScrollRef.current = true;
+      }
+      
+      scrollTimeout = setTimeout(() => {
+        const currentDistance = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (currentDistance < 10) {
+          userScrolledRef.current = false;
+          autoScrollRef.current = true;
+        }
+      }, 150);
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        userScrolledRef.current = true;
+        autoScrollRef.current = false;
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    container.addEventListener('wheel', handleWheel, { passive: true });
+
+    return () => {
+      clearTimeout(scrollTimeout);
+      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
@@ -697,8 +652,8 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
       }
     };
   }, []);
- 
 
+  // Render (continue in next artifact due to length...)
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-gray-950 transition-colors">
       <ChatHeader
@@ -711,8 +666,8 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
 
       <main 
         className="flex-1 overflow-hidden flex flex-col bg-white dark:bg-gray-950"
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
         onDrop={handleDrop}
       >
         {isDragOver && (
@@ -734,36 +689,20 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
             {showCollapseControls && (
               <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 transition-colors">
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={collapseAllExceptLast}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors"
-                  >
+                  <button onClick={collapseAllExceptLast} className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors">
                     <Minimize2 className="h-4 w-4" />
                     <span>Collapse Previous</span>
                   </button>
-                  <button
-                    onClick={expandAllSections}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors"
-                  >
+                  <button onClick={expandAllSections} className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors">
                     <Maximize2 className="h-4 w-4" />
                     <span>Expand All</span>
                   </button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={toggleAutoScroll}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                      autoScrollRef.current
-                        ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500'
-                        : 'border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
+                  <button onClick={toggleAutoScroll} className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border transition-colors ${autoScrollRef.current ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500' : 'border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
                     {autoScrollRef.current ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
                   </button>
-                  <button
-                    onClick={scrollToBottom}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors"
-                  >
+                  <button onClick={scrollToBottom} className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors">
                     <ChevronDown className="h-4 w-4" />
                     <span>Scroll to Bottom</span>
                   </button>
@@ -771,20 +710,13 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
               </div>
             )}
 
-            <div
-              ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto px-4 py-8 min-h-0 bg-white dark:bg-gray-950 relative"
-              style={{ scrollBehavior: 'auto' }}
-            >
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-8 min-h-0 bg-white dark:bg-gray-950 relative" style={{ scrollBehavior: 'auto' }}>
               <div className="max-w-5xl mx-auto space-y-6 pb-4">
                 {collapsibleSections.length > 0 ? (
                   collapsibleSections.map((section, index) => (
                     <div key={section.id} className="space-y-4">
                       {section.messages.length > 0 && section.isCollapsed && (
-                        <button
-                          onClick={() => toggleSectionCollapse(section.id)}
-                          className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors group"
-                        >
+                        <button onClick={() => toggleSectionCollapse(section.id)} className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors group">
                           <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
                             <ChevronDown className="h-4 w-4 transition-transform group-hover:scale-110" />
                             <span className="font-medium">{section.title}</span>
@@ -796,87 +728,117 @@ const processFile = useCallback(async (file: File): Promise<ChatFile> => {
                             Click to expand
                           </div>
                         </button>
-                      )}
-                      
-                      {!section.isCollapsed && (
-                        <>
-                          {section.messages.map((message) => (
-                            <div key={message.id} className="group relative">
-                              {message.isStreaming && message.content === '' ? (
-                                <ThinkingPulse />
-                              ) : (
-                                <ChatMessage message={message} />
-                              )}
-                              {!message.isStreaming && (
-                                <button
-                                  onClick={() => copyMessageToClipboard(message)}
-                                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                >
-                                  {copiedMessageId === message.id ? (
-                                    <CheckIcon className="h-4 w-4 text-green-500 dark:text-green-400" />
-                                  ) : (
-                                    <CopyIcon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                          
-                          {index < collapsibleSections.length - 1 && (
-                            <div className="flex justify-center py-2">
+                    )}
+                    
+                    {!section.isCollapsed && (
+                      <>
+                        {section.messages.map((message) => (
+                          <div key={message.id} className="group relative">
+                            {/* Show spinner for streaming messages with no content */}
+                            {message.isStreaming && message.content === '' && showThinkingSpinner ? (
+                              <div className="flex items-center gap-3 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+                                <div className="flex items-center gap-1">
+                                  <div className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-bounce" 
+                                      style={{ animationDelay: '0ms' }} />
+                                  <div className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-bounce" 
+                                      style={{ animationDelay: '150ms' }} />
+                                  <div className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-bounce" 
+                                      style={{ animationDelay: '300ms' }} />
+                                </div>
+                                <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                                  AI is thinking...
+                                </span>
+                              </div>
+                            ) : (
+                              <ChatMessage message={message} />
+                            )}
+                            {!message.isStreaming && (
                               <button
-                                onClick={() => toggleSectionCollapse(section.id)}
-                                className="flex items-center gap-2 px-4 py-2 text-sm rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors"
+                                onClick={() => copyMessageToClipboard(message)}
+                                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
                               >
-                                <ChevronUp className="h-4 w-4" />
-                                Collapse section
-                                <ChevronUp className="h-4 w-4" />
+                                {copiedMessageId === message.id ? (
+                                  <CheckIcon className="h-4 w-4 text-green-500 dark:text-green-400" />
+                                ) : (
+                                  <CopyIcon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                                )}
                               </button>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  messages.map((message) => (
-                    <div key={message.id} className="group relative">
-                      {message.isStreaming && message.content === '' ? (
-                        <ThinkingPulse />
-                      ) : (
-                        <ChatMessage message={message} />
-                      )}
-                      {!message.isStreaming && (
-                        <button
-                          onClick={() => copyMessageToClipboard(message)}
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
-                        >
-                          {copiedMessageId === message.id ? (
-                            <CheckIcon className="h-4 w-4 text-green-500 dark:text-green-400" />
-                          ) : (
-                            <CopyIcon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
+                            )}
+                          </div>
+                        ))}
+                        
+                        {index < collapsibleSections.length - 1 && (
+                          <div className="flex justify-center py-2">
+                            <button
+                              onClick={() => toggleSectionCollapse(section.id)}
+                              className="flex items-center gap-2 px-4 py-2 text-sm rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors"
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                              Collapse section
+                              <ChevronUp className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))
+              ) : (
+                messages.map((message) => (
+                  <div key={message.id} className="group relative">
+                    {/* Show spinner for streaming messages with no content */}
+                    {message.isStreaming && message.content === '' && showThinkingSpinner ? (
+                      <div className="flex items-center gap-3 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-bounce" 
+                              style={{ animationDelay: '0ms' }} />
+                          <div className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-bounce" 
+                              style={{ animationDelay: '150ms' }} />
+                          <div className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 animate-bounce" 
+                              style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                          AI is thinking...
+                        </span>
+                      </div>
+                    ) : (
+                      <ChatMessage message={message} />
+                    )}
+                    {!message.isStreaming && (
+                      <button
+                        onClick={() => copyMessageToClipboard(message)}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        {copiedMessageId === message.id ? (
+                          <CheckIcon className="h-4 w-4 text-green-500 dark:text-green-400" />
+                        ) : (
+                          <CopyIcon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Floating scroll to bottom button */}
-              {userScrolledRef.current && isStreaming && (
-                <div className="sticky bottom-4 left-0 right-0 flex justify-center pointer-events-none z-10">
-                  <button
-                    onClick={scrollToBottom}
-                    className="pointer-events-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center gap-2 transition-all hover:scale-105 animate-in fade-in slide-in-from-bottom-4 duration-300"
-                  >
-                    <ChevronDown className="w-4 h-4" />
-                    <span className="text-sm font-medium">New messages</span>
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                  </button>
-                </div>
-              )}
+              {userScrolledRef.current && (
+                  <div className="sticky bottom-4 left-0 right-0 flex justify-center pointer-events-none z-10">
+                    <button
+                      onClick={scrollToBottom}
+                      className="pointer-events-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center gap-2 transition-all hover:scale-105 animate-in fade-in slide-in-from-bottom-4 duration-300"
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                      <span className="text-sm font-medium">
+                        {isStreaming ? 'Scroll to see response' : 'Scroll to bottom'}
+                      </span>
+                      {isStreaming && (
+                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                      )}
+                    </button>
+                  </div>
+                )}
             </div>
           </div>
         )}

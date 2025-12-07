@@ -81,16 +81,17 @@ export function FancyChat() {
   // Helper Functions
   const organizeMessagesIntoSections = useCallback((msgs: Message[]): CollapsibleSection[] => {
     const sections: CollapsibleSection[] = [];
-    const SECTION_SIZE = 5;
+    const SECTION_SIZE = 2;
     
     for (let i = 0; i < msgs.length; i += SECTION_SIZE) {
       const sectionMessages = msgs.slice(i, i + SECTION_SIZE);
+      const sectionIndex = Math.floor(i / SECTION_SIZE);
       const sectionId = `section-${i / SECTION_SIZE}`;
       
       sections.push({
         id: sectionId,
         messages: sectionMessages,
-        isCollapsed: i < msgs.length - SECTION_SIZE,
+        isCollapsed: sectionIndex < Math.floor((msgs.length - 1) / SECTION_SIZE),
         title: `Messages ${i + 1}-${Math.min(i + SECTION_SIZE, msgs.length)}`,
       });
     }
@@ -508,23 +509,33 @@ export function FancyChat() {
     }
   };
 
-  const toggleSectionCollapse = (sectionId: string) => {
-    setCollapsibleSections(prev =>
-      prev.map(section =>
-        section.id === sectionId ? { ...section, isCollapsed: !section.isCollapsed } : section
+  const toggleSectionCollapse = useCallback((sectionId: string) => {
+    setCollapsibleSections(prev => 
+      prev.map(section => 
+        section.id === sectionId 
+          ? { ...section, isCollapsed: !section.isCollapsed } 
+          : section
       )
     );
-  };
+  }, []);
 
-  const collapseAllExceptLast = () => {
-    setCollapsibleSections(prev =>
-      prev.map((section, index) => ({ ...section, isCollapsed: index < prev.length - 1 }))
+  const collapseAllExceptLast = useCallback(() => {
+    setCollapsibleSections(prev => 
+      prev.map((section, index) => ({
+        ...section,
+        isCollapsed: index !== prev.length - 1
+      }))
     );
-  };
+  }, []);
 
-  const expandAllSections = () => {
-    setCollapsibleSections(prev => prev.map(section => ({ ...section, isCollapsed: false })));
-  };
+  const expandAllSections = useCallback(() => {
+    setCollapsibleSections(prev => 
+      prev.map(section => ({
+        ...section,
+        isCollapsed: false
+      }))
+    );
+  }, []);
 
   const toggleAutoScroll = () => {
     autoScrollRef.current = !autoScrollRef.current;
@@ -575,16 +586,38 @@ export function FancyChat() {
 
   // Effects
   useEffect(() => {
-    if (messages.length > 5) {
-      const sections = organizeMessagesIntoSections(messages);
-      setCollapsibleSections(sections);
+    if (messages?.length > 5) {
+      const sections = organizeMessagesIntoSections?.(messages)?.map((v: any) => v); 
+      
+      if (Array.isArray(sections) && sections.length > 0) {
+        // Preserve existing collapse states when sections change
+        setCollapsibleSections(prev => {
+          if (prev.length === 0) return sections;
+          
+          // Map old collapse states to new sections based on section ID or index
+          return sections.map((newSection, index) => {
+            const oldSection = prev.find(old => old.id === newSection.id) || 
+                              prev[index];
+            
+            return {
+              ...newSection,
+              isCollapsed: oldSection ? oldSection.isCollapsed : newSection.isCollapsed
+            };
+          });
+        });
+      } else {
+        console.error('No Sections Found');
+      }
+      
       setShowCollapseControls(true);
     } else {
-      setCollapsibleSections([]);
       setShowCollapseControls(false);
+      setCollapsibleSections([]);
     }
   }, [messages, organizeMessagesIntoSections]);
 
+
+  
   useEffect(() => {
     if (autoScrollRef.current && !userScrolledRef.current && messagesContainerRef.current) {
       const container = messagesContainerRef.current;
